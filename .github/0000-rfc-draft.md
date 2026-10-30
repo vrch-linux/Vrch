@@ -186,13 +186,30 @@ Per split control dir `.control.$subpkgname`:
    `provides=(libfoo.so)` / `depends=(libfoo.so)` in the PKGBUILD,
    `find_libprovides` (M:537) / `find_libdepends` (M:472) rewrite them to
    `libfoo.so=1-64` from `readelf` SONAME/NEEDED. Names stay manual.
+   - The [`alpm-sonamev1`](https://alpm.archlinux.page/specifications/alpm-sonamev1.7.html)
+     page calls it legacy, "removed with the release of pacman 6.1", yet
+     makepkg 7.1 still generates it and `extra` ships it (`chafa`:
+     `provides = libchafa.so=0-64`, `llvm-libs` in `wi/310`).
+   - The lookup is `find "$pkgdir" -type f -name "$p*"` on the package being
+     written. Carving the library into a split leaves the name in the main
+     package, unversioned ("Cannot find library listed in 'provides'"), and
+     the split provides nothing: dependents of `libfoo.so=1-64` break.
+     Seen on `chafa` with a `-libs` split.
 2. `lib/autodep/*.sh`, gated by `OPTIONS=(autodeps)` (off by default in
-   `makepkg.conf`):
+   `makepkg.conf`, and in devtools' `x86_64.conf`):
+   - `autodeps` is never added to `packaging_options`, so
+     `options=(autodeps)` in a PKGBUILD fails lint ("unknown option"), only
+     `makepkg.conf` can enable it.
    - `library_provides.sh`: `lib:libfoo.so.1`, unversioned, only files at
-     depth 1 of `LIB_DIRS` (`lib:usr/lib lib32:usr/lib32`).
+     depth 1 of `LIB_DIRS` (`lib:usr/lib lib32:usr/lib32`). Scans each
+     package's own `$pkgdir` from `write_pkginfo`, so it stays correct
+     across splits as is.
    - `library_depends.sh`: `ldd` each executable; skips libs present in own
      `$pkgdir`; adds `lib:` dep only if `pacman -T` says the host already
      satisfies it, otherwise silently dropped ("helps bootstrapping").
+     A NEEDED that `ldd` cannot resolve is assumed to be "part of the
+     package": in a clean chroot, a library just carved into a sibling is
+     not installed, so the main package gets no `lib:` dep on it.
    - `binary_provides.sh`: `bin:name` for executables in `BIN_DIRS`,
      unversioned. `BIN_DIRS` is unset in the shipped `makepkg.conf`, so
      no-op by default. Closest match to Alpine `cmd:`, minus `=ver`.
@@ -206,6 +223,12 @@ Per split control dir `.control.$subpkgname`:
   `$stashdir`, each `package_X()` takes files via `filelist=()` (extglob,
   `!` excludes), warns on unpackaged leftovers. Carve primitive, but
   rules stay manual per PKGBUILD: no defaults, no split by name suffix.
+  Provides are declared per `package_X()`, so neither soname issue above
+  applies, nor is either addressed.
+- `mr/317` (open): splits `autodeps` into `autodepends` and `autoprovides`,
+  since Arch wants provides globally but depends needs per-PKGBUILD work.
+  Registers both in `packaging_options`, which also allows setting them in
+  a PKGBUILD.
 - `install_if`: no `.PKGINFO` key in `write_pkginfo`, no issue/MR found
   in `pacman/pacman` search.
 
@@ -215,8 +238,8 @@ Per split control dir `.control.$subpkgname`:
 |---|---|---|
 | `package()` once + `amove` | per-split install; `stash()` + `filelist` in `mr/314` | carve mode (reuse `mr/314` if merged) |
 | `default_*` by name suffix | none | `lib/split/*.sh` (like `tidy/`, `autodep/`), default filelists per suffix |
-| `so:` provides, versioned, sibling-aware | `libfoo.so=1-64` manual names, or `lib:` autodeps unversioned | auto + versioned provides |
-| `so:` needs resolved against siblings first | `library_depends` checks own `$pkgdir` + host only | sibling lookup, else carved splits lose lib deps or depend on host state |
+| `so:` provides, versioned, sibling-aware | `libfoo.so=1-64` manual names, looked up in the declaring package only; or `lib:` autodeps unversioned, per package | auto + versioned provides; meanwhile `provides=(libfoo.so)` entries must follow the library file into its split |
+| `so:` needs resolved against siblings first | `library_depends` checks own `$pkgdir` + host only, unresolved `ldd` lookups assumed in-package | sibling lookup, else carved splits lose lib deps or depend on host state |
 | `pc:` provides/needs | missing | `autodep/pkgconfig_{provides,depends}.sh` |
 | `cmd:` | `bin:` via `BIN_DIRS`, unset by default | enable `BIN_DIRS`, add `=ver` |
 | `depends_dev` | missing | array applied to `-dev` split |
@@ -230,6 +253,10 @@ Quoting @Toolybird:
 
 See the [`alpm-sonamev2`](https://alpm.archlinux.page/specifications/alpm-sonamev2.7.html) specification.
 The more granular the packages, the less tangled the dependency graph.
+
+Autodeps already fit splits on the provides side: each package advertises
+the sonames of the files it ships. Enabling `autoprovides` (`mr/317`) would
+leave the manual v1 names and sibling-aware depends as the remaining work.
 
 ## Specification
 
