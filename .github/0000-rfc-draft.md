@@ -242,8 +242,8 @@ Per split control dir `.control.$subpkgname`:
 | `so:` needs resolved against siblings first | `library_depends` checks own `$pkgdir` + host only, unresolved `ldd` lookups assumed in-package | sibling lookup, else carved splits lose lib deps or depend on host state |
 | `pc:` provides/needs | missing | `autodep/pkgconfig_{provides,depends}.sh` |
 | `cmd:` | `bin:` via `BIN_DIRS`, unset by default | enable `BIN_DIRS`, add `=ver` |
-| `depends_dev` | missing | array applied to `-dev` split |
-| `static` keeps `*.a` | `OPTIONS=(!staticlibs)` default, `tidy/10-staticlibs.sh` deletes `*.a` that have a `.so` sibling | flip to `staticlibs` when a `-static` split exists |
+| `depends_dev` | missing | none: no `-dev` split, `makedepends=(foo)` expects headers in `foo` |
+| `static` keeps `*.a` | `OPTIONS=(!staticlibs)` default, `tidy/10-staticlibs.sh` deletes `*.a` that have a `.so` sibling | none: no `-static` split, same reason as `-dev` |
 | `install_if` | missing in pacman | libalpm + `.PKGINFO` feature, out of makepkg scope; interim `optdepends` |
 
 ### Autodeps
@@ -272,7 +272,11 @@ Land a declarative mechanism (i.e. [`splitpkg2`](https://gitlab.archlinux.org/pa
 
 3. **Naming conventions.**
 
-Define standard suffixes so splits look familiar to users: `*-docs`, `*-gtk`, `*-qt`, and what else is common? `*-completions`, `*-dev`, `*-lang`, `*-dbg` (see Unresolved Questions).
+Define standard suffixes so splits look familiar to users: `*-docs`, `*-lang`, `*-libs`, `*-pyc-opt`, plus per-package ones like `*-gtk`, `*-qt` (see Unresolved Questions).
+
+Left out on purpose:
+- `*-dev`, `*-static`: Arch PKGBUILDs (official and AUR) declare `makedepends=(foo)` and expect headers and static libraries in `foo`.
+- `*-completions`: mostly 0.6-1.4 KiB installed (`reuse`, `dpkg` zsh), on par with the ~764 B each entry adds to the sync db, paid by every machine whether installed or not. Rare large ones (`dpkg` bash, 21 KiB) do not change the picture.
 
 4. **License deduplication.**
 
@@ -372,7 +376,7 @@ Compound this per package, per release (without delta upgrades), per affected ma
 
 ### Unresolved 3: Defining conventions
 
-Which suffix categories to standardize, i.e. `*-completions`, `*-dev`, `*-lang`, `*-dbg`.
+Which suffix categories to standardize beyond `*-docs`, i.e. `*-lang`, `*-libs`, `*-pyc-opt`.
 With pre-defined categories, a packager can be as specific as they wish, while the result stays familiar to users. This also entails per-case basis.
 
 ### Unresolved 4: Gathering more data
